@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fixed Movement Particle Heart</title>
+    <style>
+        body { margin: 0; padding: 0; background-color: #110011; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #guide-container { position: absolute; bottom: 20px; width: 100%; pointer-events: none; z-index: 99; display: flex; justify-content: center; }
+        #guide { color: rgba(255, 153, 204, 0.7); font-size: 18px; font-weight: bold; }
+        #photos { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .8s; z-index: 10; }
+        #photos.show { opacity: 1; }
+        .photo { position: absolute; width: clamp(86px, 16vw, 150px); aspect-ratio: .73; overflow: hidden; border: 5px solid white; background: linear-gradient(145deg,#ffd9e9 0 15%,#b62d72 15% 43%,#f3a4ca 43% 68%,#542044 68%); box-shadow: 0 8px 22px #000a; transform: translate(-50%,-50%) rotate(var(--r)); }
+        .photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+        .photo:nth-child(1){left:17%;top:25%;--r:-14deg}.photo:nth-child(2){left:50%;top:19%;--r:7deg}.photo:nth-child(3){left:81%;top:30%;--r:15deg}.photo:nth-child(4){left:22%;top:67%;--r:12deg}.photo:nth-child(5){left:51%;top:55%;--r:-7deg}.photo:nth-child(6){left:79%;top:68%;--r:-13deg}
+        #letter { position: fixed; left: 50%; top: 50%; width: min(87vw,440px); transform: translate(-50%,-50%) scale(.45); opacity: 0; pointer-events: none; z-index: 11; color: #4a2437; text-align: center; font-family: "Segoe UI", Arial, sans-serif; letter-spacing: 0; word-spacing: normal; background: linear-gradient(145deg,#fff1f7,#ffc9df 55%,#fff0f6); padding: 38px 27px; box-shadow: 0 0 35px #ff559e99,0 18px 42px #000a; transition: opacity .8s,transform 1s cubic-bezier(.2,.9,.25,1); }
+        #letter.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+        #letter h2 { font: italic 700 25px "Segoe UI", Arial, sans-serif; margin: 0 0 16px; } #letter p { font: 16px/1.65 "Segoe UI", Arial, sans-serif; margin: 0; } #letter em { display:block; margin-top:15px; font:bold italic 15px "Segoe UI", Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <div id="guide-container"><div id="guide">CHÚC MỪNG NGÀY 20/10!</div></div>
+    <canvas class="output_canvas"></canvas>
+    <div id="photos">
+        <div class="photo"><img src="images/1.jpg" alt="Kỷ niệm 1"></div>
+        <div class="photo"><img src="images/2.jpg" alt="Kỷ niệm 2"></div>
+        <div class="photo"><img src="images/3.jpg" alt="Kỷ niệm 3"></div>
+        <div class="photo"><img src="images/4.jpg" alt="Kỷ niệm 4"></div>
+        <div class="photo"><img src="images/5.jpg" alt="Kỷ niệm 5"></div>
+        <div class="photo"><img src="images/6.jpg" alt="Kỷ niệm 6"></div>
+    </div>
+    <article id="letter"><h2>Gửi bạn Chi,</h2><p>Nhân ngày 20/10, chúc Chi luôn xinh đẹp, học tập thật tốt và có thật nhiều niềm vui. Mong rằng Chi luôn có những kỉ niệm đẹp và cầu gì được nấy ( •̀ ω •́ )✧.</p><em>Chúc mừng ngày Phụ nữ Việt Nam! ♥</em></article>
+    <script>
+        const canvasElement = document.getElementsByClassName('output_canvas')[0];
+        const ctx = canvasElement.getContext('2d');
+        const NUM_PARTICLES = 4500, PARTICLE_SIZE = 1.8, SPEED = 0.14;
+        const PINK_LIGHT = '#ffb6c1', PINK_DARK = '#ff1493', WHITE_COLOR = '#FFFFFF';
+        let width, height, particles = [], isPinching = false, heartCenter = { x: 0, y: 0 };
+        let heartScaleBase = 12, currentHeartScale = heartScaleBase, qPoints = [], tPoints = [];
+        let sequenceActive = false, sequenceState = 'idle', storyPoints = [];
+        function resize() { width = window.innerWidth; height = window.innerHeight; canvasElement.width = width; canvasElement.height = height; }
+        window.addEventListener('resize', resize); resize();
+        function getTextPoints(text, font) {
+            const offscreenCanvas = document.createElement('canvas'), offCtx = offscreenCanvas.getContext('2d');
+            offscreenCanvas.width = 300; offscreenCanvas.height = 300; offCtx.font = font; offCtx.fillStyle = 'white'; offCtx.textAlign = 'center'; offCtx.textBaseline = 'middle'; offCtx.fillText(text, 150, 150);
+            const data = offCtx.getImageData(0, 0, 300, 300).data, points = [];
+            for (let y = 0; y < 300; y += 3) for (let x = 0; x < 300; x += 3) if (data[(y * 300 + x) * 4 + 3] > 128) points.push({ x: x - 150, y: y - 150 });
+            return points;
+        }
+        class Particle {
+            constructor() {
+                this.x = Math.random() * width; this.y = Math.random() * height; this.tx = this.x; this.ty = this.y;
+                const randTask = Math.random();
+                if (randTask < 0.5) {
+                    this.targetType = 'HEART'; this.heartAngle = Math.random() * Math.PI * 2; this.radiusScale = Math.sqrt(Math.random());
+                    this.color = this.radiusScale > .5 ? PINK_LIGHT : PINK_DARK;
+                } else if (randTask < 0.75) { this.targetType = 'Q'; this.color = WHITE_COLOR; this.letterPointIndex = Math.floor(Math.random() * qPoints.length); }
+                else { this.targetType = 'T'; this.color = WHITE_COLOR; this.letterPointIndex = Math.floor(Math.random() * tPoints.length); }
+                this.mySpeed = SPEED + Math.random() * .08;
+            }
+            update() {
+                if (sequenceActive) {
+                    if (sequenceState === 'text' && storyPoints.length) {
+                        const p = storyPoints[this.index % storyPoints.length]; this.tx = p.x; this.ty = p.y;
+                    }
+                    this.x += (this.tx - this.x) * 0.035; this.y += (this.ty - this.y) * 0.035;
+                    return;
+                }
+                if (isPinching) {
+                    const letterOffset = currentHeartScale * 25;
+                    if (this.targetType === 'HEART') {
+                        const t = this.heartAngle, hx = 16 * Math.pow(Math.sin(t), 3), hy = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)), finalScale = currentHeartScale * this.radiusScale;
+                        this.tx = heartCenter.x + hx * finalScale; this.ty = heartCenter.y + hy * finalScale;
+                    } else if (this.targetType === 'N') { const p = qPoints[this.letterPointIndex]; this.tx = heartCenter.x - letterOffset + p.x; this.ty = heartCenter.y + p.y; }
+                    else if (this.targetType === 'H') { const p = tPoints[this.letterPointIndex]; this.tx = heartCenter.x + letterOffset + p.x; this.ty = heartCenter.y + p.y; }
+                } else if (Math.abs(this.x - this.tx) < 5) { const angle = Math.random() * Math.PI * 2, dist = Math.max(width, height) * (.5 + Math.random()); this.tx = width / 2 + Math.cos(angle) * dist; this.ty = height / 2 + Math.sin(angle) * dist; }
+                this.x += (this.tx - this.x) * this.mySpeed; this.y += (this.ty - this.y) * this.mySpeed;
+            }
+            draw() { ctx.fillStyle = this.color; ctx.beginPath(); ctx.globalAlpha = this.targetType === 'HEART' ? .8 : 1; ctx.arc(this.x, this.y, PARTICLE_SIZE, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+        }
+        function init() { const fontStyle = 'bold 140px Arial, sans-serif'; qPoints = getTextPoints('N', fontStyle); tPoints = getTextPoints('H', fontStyle); particles = []; for (let i = 0; i < NUM_PARTICLES; i++) { const p = new Particle(); p.index = i; particles.push(p); } }
+        function buildStoryText(text) {
+            const off = document.createElement('canvas'), octx = off.getContext('2d'); off.width = width; off.height = height;
+            octx.fillStyle = 'white'; octx.textAlign = 'center'; octx.textBaseline = 'middle'; octx.font = `italic bold ${Math.min(width * .19, 135)}px Georgia`;
+            octx.fillText(text, width / 2, height / 2); const data = octx.getImageData(0, 0, width, height).data; storyPoints = [];
+            for (let y = 0; y < height; y += 3) for (let x = 0; x < width; x += 3) if (data[(y * width + x) * 4 + 3] > 120) storyPoints.push({ x, y });
+            particles.forEach((p, i) => p.color = i % 8 === 0 ? WHITE_COLOR : (i % 2 ? PINK_LIGHT : PINK_DARK));
+        }
+        function scatterStoryParticles() { sequenceState = 'scatter'; particles.forEach(p => { p.tx = Math.random() * width; p.ty = Math.random() * height; }); }
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        async function playStory() {
+            sequenceActive = true; document.getElementById('guide').textContent = 'MÓN QUÀ ĐANG ĐƯỢC TẠO...';
+            sequenceState = 'text'; buildStoryText('Chúc mừng'); await wait(8500);
+            buildStoryText('20/10'); await wait(5500);
+            scatterStoryParticles(); document.getElementById('photos').classList.add('show'); await wait(5000);
+            document.getElementById('photos').classList.remove('show'); await wait(700);
+            document.getElementById('letter').classList.add('show'); document.getElementById('guide').textContent = 'CHÚC MỪNG 20/10!';
+        }
+        init();
+        function animate() { currentHeartScale = heartScaleBase + Math.sin(Date.now() / 250) * 1.2; ctx.fillStyle = 'rgba(20, 0, 10, 0.25)'; ctx.fillRect(0, 0, width, height); particles.forEach(p => { p.update(); p.draw(); }); requestAnimationFrame(animate); }
+        animate();
+        window.addEventListener('load', () => setTimeout(playStory, 900));
+    </script>
+</body></html>
